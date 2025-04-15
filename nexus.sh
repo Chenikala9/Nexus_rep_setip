@@ -1,30 +1,45 @@
 #!/bin/bash
 
-# Update system and install tools
+set -e
+
+# Define variables
+NEXUS_VERSION="3.78.2-04"
+NEXUS_FILENAME="nexus-unix-x86-64-${NEXUS_VERSION}.tar.gz"
+NEXUS_DOWNLOAD_URL="https://download.sonatype.com/nexus/3/${NEXUS_FILENAME}"
+INSTALL_DIR="/opt"
+NEXUS_DIR="${INSTALL_DIR}/nexus"
+NEXUS_DATA_DIR="${INSTALL_DIR}/sonatype-work"
+
+# Update and install required packages
+echo "Updating system..."
 sudo yum update -y
-sudo yum install -y wget
-sudo yum install -y java-17-amazon-corretto
+echo "Installing required packages..."
+sudo yum install -y wget java-17-amazon-corretto
 
-# Setup Nexus directories
-sudo mkdir -p /app && cd /app
+# Create nexus user
+echo "Creating nexus user..."
+sudo useradd --system --no-create-home nexus || true
 
-# Download and extract Nexus
-sudo wget https://download.sonatype.com/nexus/3/nexus-unix-x86-64-3.78.2-04.tar.gz
-sudo tar -xvf nexus-unix-x86-64-3.78.2-04.tar.gz
-sudo mv nexus-3.78.2-04 nexus
+# Create directories
+echo "Creating directories..."
+cd $INSTALL_DIR
+sudo wget $NEXUS_DOWNLOAD_URL
+sudo tar -xvzf $NEXUS_FILENAME
+sudo mv nexus-${NEXUS_VERSION} nexus
+sudo mkdir -p $NEXUS_DATA_DIR
 
-# Create nexus user and assign permissions
-sudo adduser nexus
-sudo chown -R nexus:nexus /app/nexus
-sudo chown -R nexus:nexus /app/sonatype-work
+# Set ownership
+sudo chown -R nexus:nexus $NEXUS_DIR
+sudo chown -R nexus:nexus $NEXUS_DATA_DIR
 
-# Configure Nexus to run as 'nexus' user
-echo 'run_as_user="nexus"' | sudo tee /app/nexus/bin/nexus.rc
+# Configure run_as_user
+echo 'run_as_user="nexus"' | sudo tee ${NEXUS_DIR}/bin/nexus.rc
 
-# Create systemd service file
+# Create systemd service
+echo "Creating systemd service..."
 sudo tee /etc/systemd/system/nexus.service > /dev/null <<EOL
 [Unit]
-Description=Nexus Repository Manager
+Description=nexus service
 After=network.target
 
 [Service]
@@ -32,19 +47,21 @@ Type=forking
 LimitNOFILE=65536
 User=nexus
 Group=nexus
-ExecStart=/app/nexus/bin/nexus start
-ExecStop=/app/nexus/bin/nexus stop
+ExecStart=${NEXUS_DIR}/bin/nexus start
+ExecStop=${NEXUS_DIR}/bin/nexus stop
 Restart=on-abort
 
 [Install]
 WantedBy=multi-user.target
 EOL
 
-# Start and enable the service
+# Enable and start service
+echo "Enabling and starting Nexus..."
 sudo systemctl daemon-reload
 sudo systemctl enable nexus
 sudo systemctl start nexus
 
-# Check status
+# Print status
+echo "Nexus installation complete!"
 sudo systemctl status nexus
 
